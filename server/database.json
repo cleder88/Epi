@@ -1,0 +1,61 @@
+{
+  "funcionarios": [],
+  "epis": [
+    {
+      "id": 1,
+      "nome": "Capacete de Segurança",
+      "ca": "12345",
+      "validade": "2027-12-31",
+      "tamanho": "Único",
+      "quantidade": 50,
+      "descricao": "Capacete classe A",
+      "criado_em": "2026-08-31T00:33:49.880Z"
+    },
+    {
+      "id": 2,
+      "nome": "Luva de Proteção",
+      "ca": "67890",
+      "validade": "2026-10-15",
+      "tamanho": "M",
+      "quantidade": 100,
+      "descricao": "Luva nitrílica",
+      "criado_em": "2026-08-31T00:33:49.881Z"
+    },
+    {
+      "id": 3,
+      "nome": "Óculos de Proteção",
+      "ca": "54321",
+      "validade": "2027-06-30",
+      "tamanho": "Único",
+      "quantidade": 80,
+      "descricao": "Óculos incolor anti-risco",
+      "criado_em": "2026-08-31T00:33:49.881Z"
+    },
+    {
+      "id": 4,
+      "nome": "Protetor Auricular",
+      "ca": "98765",
+      "validade": "2026-12-31",
+      "tamanho": "Único",
+      "quantidade": 200,
+      "descricao": "Tipo plug silicone",
+      "criado_em": "2026-08-31T00:33:49.881Z"
+    },
+    {
+      "id": 5,
+      "nome": "Botina de Segurança",
+      "ca": "11223",
+      "validade": "2027-03-20",
+      "tamanho": "42",
+      "quantidade": 30,
+      "descricao": "Bico de aço",
+      "criado_em": "2026-08-31T00:33:49.881Z"
+    }
+  ],
+  "entregas": [],
+  "seq": {
+    "funcionarios": 5,
+    "epis": 11,
+    "entregas": 1
+  }
+}
