@@ -126,8 +126,23 @@
     <section id="tab-epis" class="tab-panel hidden">
       <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
         <h2 class="text-xl font-bold text-slate-800">Equipamentos de Proteção (EPI)</h2>
-        <button onclick="openEpiModal()" class="bg-blue-700 text-white px-5 py-2.5 rounded-lg font-medium hover:bg-blue-800"><i class="fa-solid fa-plus mr-2"></i>Novo EPI</button>
+        <div class="flex flex-wrap gap-2">
+          <button onclick="downloadModeloEPI()" class="bg-white border px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-slate-50 shadow-sm"><i class="fa-solid fa-file-excel mr-2 text-emerald-600"></i>Baixar modelo Excel</button>
+          <a href="/api/epis/template" download class="hidden sm:inline-flex items-center bg-white border px-3 py-2.5 rounded-lg text-xs font-medium hover:bg-slate-50" title="Alternativa CSV direta"><i class="fa-solid fa-download mr-1"></i>CSV</a>
+          <label class="bg-emerald-600 text-white px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-emerald-700 cursor-pointer shadow-sm flex items-center">
+            <i class="fa-solid fa-file-arrow-up mr-2"></i>Importar planilha
+            <input id="importEpiInput" type="file" accept=".xlsx,.xls,.csv" class="hidden" onchange="importarPlanilhaEPI(event)">
+          </label>
+          <button onclick="openEpiModal()" class="bg-blue-700 text-white px-5 py-2.5 rounded-lg font-medium hover:bg-blue-800"><i class="fa-solid fa-plus mr-2"></i>Novo EPI</button>
+        </div>
       </div>
+      <!-- Barra de ajuda importação -->
+      <div class="bg-blue-50 border border-blue-200 rounded-xl p-3 mb-4 text-sm text-blue-900 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+        <p><i class="fa-solid fa-lightbulb mr-1 text-blue-700"></i><b>Cadastro em massa:</b> Baixe o modelo, preencha no Excel e importe. Colunas: <code class="bg-white px-1 rounded">nome, ca, validade, tamanho, quantidade, descricao</code></p>
+        <span class="text-xs text-blue-700 whitespace-nowrap">Suporta .xlsx e .csv • máx 500 linhas</span>
+      </div>
+      <!-- Preview importação -->
+      <div id="importPreview" class="hidden bg-white rounded-xl border shadow-sm overflow-hidden mb-4"></div>
       <div id="gridEpis" class="grid sm:grid-cols-2 lg:grid-cols-3 gap-4"></div>
     </section>
 
@@ -304,6 +319,18 @@
       <h3 class="font-bold">Novo EPI</h3>
       <button onclick="closeEpiModal()" class="w-8 h-8 rounded-full hover:bg-slate-100"><i class="fa-solid fa-xmark"></i></button>
     </div>
+    <div class="px-5 pt-3">
+      <div class="bg-emerald-50 border border-emerald-200 rounded-lg p-3 flex items-center justify-between gap-2">
+        <p class="text-xs text-emerald-900"><i class="fa-solid fa-file-excel mr-1"></i><b>Cadastro em massa?</b> Use a planilha Excel.</p>
+        <div class="flex gap-2 shrink-0">
+          <button type="button" onclick="downloadModeloEPI()" class="text-xs bg-white border px-3 py-1.5 rounded-lg hover:bg-slate-50"><i class="fa-solid fa-download mr-1"></i>Baixar modelo</button>
+          <label class="text-xs bg-emerald-600 text-white px-3 py-1.5 rounded-lg hover:bg-emerald-700 cursor-pointer">
+            <i class="fa-solid fa-upload mr-1"></i>Importar
+            <input type="file" accept=".xlsx,.xls,.csv" class="hidden" onchange="importarPlanilhaEPI(event)">
+          </label>
+        </div>
+      </div>
+    </div>
     <form id="formEpi" class="p-5 space-y-4">
       <input type="hidden" id="epiId">
       <div>
@@ -331,6 +358,7 @@
 <div id="toast" class="fixed bottom-4 left-1/2 -translate-x-1/2 bg-slate-900 text-white px-5 py-3 rounded-full text-sm shadow-lg hidden z-50"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="js/face.js?v=20260831"></script>
 <script src="js/app.js?v=20260831"></script>
 </body>

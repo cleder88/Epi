@@ -552,6 +552,359 @@ window.exportCSV=()=>{
   const a=document.createElement('a'); a.href=url; a.download='relatorio-entregas-epi.csv'; a.click(); URL.revokeObjectURL(url);
 };
 
+// ===== EPI - MODELO EXCEL / IMPORTAÇÃO EM MASSA =====
+let _epiImportData = null;
+
+// Gera e baixa ficha/modelo Excel para cadastro em massa
+window.downloadModeloEPI = () => {
+  // Se XLSX disponível, gera .xlsx com 2 abas formatadas
+  if (typeof XLSX !== 'undefined') {
+    const wb = XLSX.utils.book_new();
+
+    // Aba 1: MODELO
+    const header = ['nome*','ca*','validade','tamanho','quantidade','descricao'];
+    const exemplos = [
+      ['Capacete de Segurança','12345','2027-12-31','Único',50,'Capacete classe A - EXEMPLO (apague ou edite)'],
+      ['Luva Nitrílica','67890','2026-10-15','M',100,'Luva nitrílica descartável - EXEMPLO'],
+      ['Óculos de Proteção','54321','2027-06-30','Único',80,'Óculos incolor anti-risco - EXEMPLO'],
+      ['Protetor Auricular','98765','2026-12-31','Único',200,'Tipo plug silicone - EXEMPLO'],
+      ['Botina de Segurança','11223','2027-03-20','42',30,'Bico de aço - EXEMPLO']
+    ];
+    const wsData = [header, ...exemplos];
+    const ws = XLSX.utils.aoa_to_sheet(wsData);
+    // larguras
+    ws['!cols'] = [{wch:28},{wch:12},{wch:14},{wch:10},{wch:12},{wch:42}];
+    // congela cabeçalho
+    ws['!freeze'] = { xSplit: 0, ySplit: 1 };
+    // filtro
+    ws['!autofilter'] = { ref: `A1:F${wsData.length}` };
+    // validação visual: cabeçalho em negrito (style só funciona em alguns viewers, mas mantemos)
+    XLSX.utils.book_append_sheet(wb, ws, 'MODELO_EPI');
+
+    // Aba 2: INSTRUÇÕES
+    const instru = [
+      ['INSTRUÇÕES - CADASTRO EM MASSA DE EPI'],
+      [''],
+      ['1. Preencha UMA LINHA por EPI na aba MODELO_EPI, abaixo do cabeçalho.'],
+      ['2. Colunas com * são OBRIGATÓRIAS: nome, ca'],
+      ['3. validade: formato AAAA-MM-DD (ex: 2027-12-31) ou DD/MM/AAAA. Deixe vazio se não houver.'],
+      ['4. tamanho: ex: P, M, G, GG, 42, Único'],
+      ['5. quantidade: número inteiro (ex: 50). Se vazio, assume 0.'],
+      ['6. descricao: texto livre opcional.'],
+      ['7. NÃO altere o nome das colunas do cabeçalho.'],
+      ['8. Apague as linhas de EXEMPLO antes de importar (ou edite-as com dados reais).'],
+      ['9. Salve o arquivo e importe em: EPIs > Importar planilha (aceita .xlsx e .csv)'],
+      ['10. Limite: 500 EPIs por importação.'],
+      [''],
+      ['Exemplo de preenchimento:'],
+      ['nome | ca | validade | tamanho | quantidade | descricao'],
+      ['Capacete de Segurança | 12345 | 2027-12-31 | Único | 50 | Capacete classe A'],
+      [''],
+      ['Dúvidas? O sistema valida e mostra erros linha a linha na importação.']
+    ];
+    const ws2 = XLSX.utils.aoa_to_sheet(instru);
+    ws2['!cols'] = [{wch:90}];
+    XLSX.utils.book_append_sheet(wb, ws2, 'INSTRUCOES');
+
+    // Aba 3: LISTA ATUAL (se houver EPIs cadastrados, exporta ficha atual)
+    if (epis && epis.length) {
+      const h2 = ['nome','ca','validade','tamanho','quantidade','descricao'];
+      const rows = epis.map(e=>[e.nome, e.ca, e.validade||'', e.tamanho||'', e.quantidade, e.descricao||'']);
+      const ws3 = XLSX.utils.aoa_to_sheet([h2, ...rows]);
+      ws3['!cols'] = [{wch:28},{wch:12},{wch:14},{wch:10},{wch:12},{wch:42}];
+      ws3['!freeze'] = { xSplit: 0, ySplit: 1 };
+      XLSX.utils.book_append_sheet(wb, ws3, 'LISTA_ATUAL');
+    }
+
+    XLSX.writeFile(wb, 'modelo_cadastro_epi_em_massa.xlsx');
+    toast('Modelo Excel baixado! Preencha e importe em EPIs > Importar planilha');
+  } else {
+    // Fallback CSV puro (sem lib)
+    const header = 'nome,ca,validade,tamanho,quantidade,descricao';
+    const linhas = [
+      'Capacete de Segurança,12345,2027-12-31,Único,50,Capacete classe A - EXEMPLO',
+      'Luva Nitrílica,67890,2026-10-15,M,100,Luva nitrílica - EXEMPLO',
+      'Óculos de Proteção,54321,2027-06-30,Único,80,Óculos incolor - EXEMPLO'
+    ];
+    const csv = '\uFEFF' + header + '\n' + linhas.join('\n');
+    const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href=url; a.download='modelo_cadastro_epi_em_massa.csv'; a.click(); URL.revokeObjectURL(url);
+    toast('Modelo CSV baixado!');
+  }
+};
+
+// Também permite baixar via servidor (CSV) - útil se XLSX bloqueado
+window.downloadModeloCSVServidor = () => {
+  window.location.href = '/api/epis/template';
+};
+
+function parseCSV(text){
+  // Detecta separador ; ou , (se contém ; e cabeçalho tem ;) usa ;
+  const firstLine = text.split(/\r?\n/).find(l=>l.trim()!=='"');
+  const sep = (firstLine && firstLine.includes(';') && !firstLine.includes(',')) ? ';' : (firstLine && firstLine.includes(';') && firstLine.split(';').length > firstLine.split(',').length ? ';' : ',');
+  const lines = text.split(/\r?\n/).filter(l=>l.trim()!=='' && !l.trim().startsWith('#'));
+  if(!lines.length) return [];
+  const headers = lines[0].split(sep).map(h=>h.trim().replace(/^"|"$/g,'').toLowerCase());
+  const rows=[];
+  for(let i=1;i<lines.length;i++){
+    const line=lines[i];
+    if(!line.trim()) continue;
+    // parser simples com aspas
+    const cols=[]; let cur=''; let inQ=false;
+    for(let c=0;c<line.length;c++){
+      const ch=line[c];
+      if(ch==='"'){ inQ=!inQ; continue; }
+      if(ch===sep && !inQ){ cols.push(cur.trim()); cur=''; }
+      else cur+=ch;
+    }
+    cols.push(cur.trim());
+    const obj={};
+    headers.forEach((h,idx)=> obj[h]= (cols[idx]||'').replace(/^"|"$/g,'').trim());
+    // ignora linha totalmente vazia
+    if(Object.values(obj).every(v=>!v)) continue;
+    rows.push(obj);
+  }
+  return rows;
+}
+
+function excelSerialToISO(serial){
+  // Excel serial 1 = 1900-01-01, 25569 = 1970-01-01 (Unix epoch). Corrige bug 1900 (serial 60)
+  const num = Number(serial);
+  if (isNaN(num) || num < 3000 || num > 60000) return null;
+  // Ajuste Vercel/Excel: se serial > 60, subtrai 1 dia do bug 1900, mas a fórmula com 25569 já considera
+  const utc = Math.round((num - 25569) * 86400 * 1000);
+  const d = new Date(utc);
+  if (isNaN(d.getTime())) return null;
+  return d.toISOString().slice(0,10);
+}
+function normalizaValidade(v){
+  if (v === null || v === undefined || String(v).trim() === '') return '';
+  // Se já é Date
+  if (v instanceof Date && !isNaN(v)) return v.toISOString().slice(0,10);
+  let s = String(v).trim();
+  // Se for número ou string numérica pura (serial Excel)
+  if (/^\d+(\.\d+)?$/.test(s)) {
+    const iso = excelSerialToISO(s);
+    if (iso) return iso;
+  }
+  // Tenta DD/MM/AAAA
+  let m = s.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (m) return `${m[3]}-${m[2]}-${m[1]}`;
+  m = s.match(/^(\d{2})-(\d{2})-(\d{4})$/);
+  if (m) return `${m[3]}-${m[2]}-${m[1]}`;
+  m = s.match(/^(\d{4})\/(\d{2})\/(\d{2})$/);
+  if (m) return `${m[1]}-${m[2]}-${m[3]}`;
+  // Já está AAAA-MM-DD (corta para 10)
+  s = s.slice(0,10);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  // Tenta parse Date genérico (ex: "Dec 31 2027")
+  const d = new Date(s);
+  if (!isNaN(d.getTime())) return d.toISOString().slice(0,10);
+  return s;
+}
+function normalizaListaBruta(rawList){
+  // Converte chaves variadas para padrão { nome, ca, validade, tamanho, quantidade, descricao }
+  return rawList.map(r=>{
+    const n={};
+    Object.keys(r).forEach(k=>{
+      const nk=k.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]/g,'');
+      n[nk]=r[k];
+    });
+    const get=(...keys)=>{
+      for(const k of keys){
+        const nk=k.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]/g,'');
+        if(n[nk]!==undefined && String(n[nk]).trim()!=='') return n[nk];
+      }
+      return '';
+    };
+    return {
+      nome: String(get('nome','nome do epi','nomeepi','produto','equipamento')||'').trim(),
+      ca: String(get('ca','certificado','numca','nca')||'').trim(),
+      validade: normalizaValidade(get('validade','val','data validade','vencimento')||''),
+      tamanho: String(get('tamanho','tam','medida')||'').trim(),
+      quantidade: String(get('quantidade','qtd','quant','estoque')||'').trim(),
+      descricao: String(get('descricao','desc','observacao','obs','detalhes')||'').trim(),
+      _raw: r
+    };
+  });
+}
+
+window.importarPlanilhaEPI = async (event) => {
+  const file = event.target.files && event.target.files[0];
+  if(!file) return;
+  const preview = document.getElementById('importPreview');
+  preview.classList.remove('hidden');
+  preview.innerHTML = `<div class="p-4 text-sm text-slate-600"><i class="fa-solid fa-spinner fa-spin mr-2"></i>Lendo planilha "${file.name}"...</div>`;
+  try{
+    let rawList=[];
+    if(file.name.toLowerCase().endsWith('.csv')){
+      const text = await file.text();
+      rawList = parseCSV(text);
+    } else {
+      if(typeof XLSX==='undefined'){
+        throw new Error('Biblioteca XLSX não carregada. Use arquivo .csv ou recarregue a página.');
+      }
+      const buf = await file.arrayBuffer();
+      const wb = XLSX.read(buf, {type:'array'});
+      // procura aba MODELO_EPI, senão primeira aba
+      let sheetName = wb.SheetNames.includes('MODELO_EPI') ? 'MODELO_EPI' : wb.SheetNames[0];
+      // se usuário dejó instrucoes como primeira, tenta achar alguma com dados
+      // se a primeira tiver <2 linhas e houver segunda, usa segunda
+      let ws = wb.Sheets[sheetName];
+      let json = XLSX.utils.sheet_to_json(ws, {defval:'', raw:false});
+      // filtra json vazio e tenta fallback se header não tem nome/ca
+      const hasHeader = json.length && Object.keys(json[0]).some(k=>k.toLowerCase().includes('nome')||k.toLowerCase().includes('ca'));
+      if(!hasHeader && wb.SheetNames.length>1){
+        for(const n of wb.SheetNames){
+          const j = XLSX.utils.sheet_to_json(wb.Sheets[n], {defval:'', raw:false});
+          if(j.length && Object.keys(j[0]).some(k=>k.toLowerCase().includes('nome'))){ json=j; sheetName=n; break; }
+        }
+      }
+      rawList = json;
+      // se ainda vazio, tenta ler como array (cabeçalho na primeira linha)
+      if(!rawList.length){
+        const aoa = XLSX.utils.sheet_to_json(ws, {header:1, defval:''});
+        if(aoa.length>=2){
+          const hdr=aoa[0].map(h=>String(h).trim());
+          rawList = aoa.slice(1).map(row=>{
+            const o={}; hdr.forEach((h,i)=> o[h]=row[i]||'');
+            return o;
+          });
+        }
+      }
+    }
+    if(!rawList.length){
+      preview.innerHTML = `<div class="p-4 text-amber-700 bg-amber-50"><i class="fa-solid fa-triangle-exclamation mr-2"></i>Nenhum dado encontrado na planilha. Verifique se a aba MODELO_EPI contém dados abaixo do cabeçalho.</div>`;
+      event.target.value='';
+      return;
+    }
+    const lista = normalizaListaBruta(rawList);
+    // valida prévia
+    const validos = lista.filter(x=>x.nome && x.ca);
+    const invalidos = lista.filter(x=>!x.nome || !x.ca);
+
+    _epiImportData = lista;
+
+    // render preview
+    const maxPreview = 8;
+    const headHtml = `<tr class="bg-slate-50 text-slate-600"><th class="p-2 text-left">#</th><th class="p-2 text-left">Nome*</th><th class="p-2 text-left">CA*</th><th class="p-2 text-left">Validade</th><th class="p-2 text-left">Tamanho</th><th class="p-2 text-left">Qtd</th><th class="p-2 text-left">Descrição</th><th class="p-2 text-left">Status</th></tr>`;
+    const rowsHtml = lista.slice(0,maxPreview).map((r,i)=>{
+      const ok = r.nome && r.ca;
+      return `<tr class="${ok?'':'bg-red-50'} border-t"><td class="p-2 text-xs">${i+1}</td><td class="p-2 text-sm">${r.nome||'<span class="text-red-600">— faltando</span>'}</td><td class="p-2 text-sm">${r.ca||'<span class="text-red-600">— faltando</span>'}</td><td class="p-2 text-xs">${r.validade||'-'}</td><td class="p-2 text-xs">${r.tamanho||'-'}</td><td class="p-2 text-xs">${r.quantidade||'0'}</td><td class="p-2 text-xs truncate max-w-[180px]">${r.descricao||'-'}</td><td class="p-2 text-xs">${ok?'<span class="text-emerald-700">✓ ok</span>':'<span class="text-red-600">✗ inválido</span>'}</td></tr>`;
+    }).join('');
+    const mais = lista.length > maxPreview ? `<p class="text-xs text-slate-500 mt-2">... e mais ${lista.length-maxPreview} linha(s). Role a planilha completa no Excel.</p>` : '';
+    preview.innerHTML = `
+      <div class="p-4 border-b bg-slate-50 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div>
+          <h3 class="font-semibold text-slate-800"><i class="fa-solid fa-table mr-2 text-blue-600"></i>Prévia da importação — ${file.name}</h3>
+          <p class="text-xs text-slate-600 mt-1">Total: <b>${lista.length}</b> linha(s) • <span class="text-emerald-700">${validos.length} válida(s)</span> • ${invalidos.length?`<span class="text-red-600">${invalidos.length} inválida(s) (nome/ca faltando)</span>`:'<span class="text-emerald-600">nenhum erro</span>'} • Aba detectada: <b>${file.name.endsWith('.csv')?'CSV': 'xlsx'}</b></p>
+        </div>
+        <div class="flex gap-2 shrink-0">
+          <button onclick="cancelarImportacaoEPI()" class="border px-4 py-2 rounded-lg text-sm hover:bg-slate-50">Cancelar</button>
+          <button onclick="confirmarImportacaoEPI()" class="bg-emerald-600 text-white px-5 py-2 rounded-lg text-sm font-medium hover:bg-emerald-700 disabled:bg-slate-300 disabled:cursor-not-allowed" ${validos.length===0?'disabled':''}><i class="fa-solid fa-check mr-1"></i>Confirmar importação (${validos.length})</button>
+        </div>
+      </div>
+      <div class="p-4">
+        <div class="overflow-x-auto border rounded-lg">
+          <table class="w-full text-sm">${headHtml}${rowsHtml}</table>
+        </div>
+        ${mais}
+        ${invalidos.length?`<div class="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-900"><i class="fa-solid fa-triangle-exclamation mr-1"></i><b>Atenção:</b> ${invalidos.length} linha(s) sem nome ou CA serão ignoradas. Corrija a planilha se necessário.</div>`:''}
+        <p class="text-xs text-slate-500 mt-3"><i class="fa-solid fa-circle-info mr-1"></i>Dica: a importação ignora maiúsculas/acentos no cabeçalho. Cabeçalhos aceitos: <code>nome, ca, validade, tamanho, quantidade, descricao</code></p>
+      </div>
+    `;
+    // rola até preview
+    preview.scrollIntoView({behavior:'smooth', block:'start'});
+  }catch(e){
+    preview.innerHTML = `<div class="p-4 bg-red-50 text-red-700 text-sm"><i class="fa-solid fa-circle-xmark mr-2"></i>Erro ao ler planilha: ${e.message}</div>`;
+  } finally {
+    event.target.value='';
+  }
+};
+
+window.cancelarImportacaoEPI = () => {
+  _epiImportData = null;
+  const p=document.getElementById('importPreview');
+  p.classList.add('hidden');
+  p.innerHTML='';
+};
+
+window.confirmarImportacaoEPI = async () => {
+  if(!_epiImportData || !_epiImportData.length){ toast('Nenhum dado para importar', false); return; }
+  // Remove _raw e garante payload limpo para API
+  const listaParaEnvio = _epiImportData.map(({ _raw, ...rest }) => rest);
+  const btn = document.querySelector('#importPreview button[onclick="confirmarImportacaoEPI()"]');
+  const orig = btn ? btn.innerHTML : '';
+  if(btn){ btn.disabled=true; btn.innerHTML='<i class="fa-solid fa-spinner fa-spin mr-1"></i>Importando...'; }
+  const renderResultado = (res) => {
+    const preview = document.getElementById('importPreview');
+    preview.innerHTML = `
+      <div class="p-4">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-full ${res.falhas>0?'bg-amber-100 text-amber-700':'bg-emerald-100 text-emerald-700'} flex items-center justify-center"><i class="fa-solid ${res.falhas>0?'fa-triangle-exclamation':'fa-check'}"></i></div>
+          <div>
+            <h3 class="font-semibold text-slate-800">${res.sucesso>0?'Importação concluída!':'Importação com falhas'}</h3>
+            <p class="text-sm text-slate-600">${res.sucesso} cadastrado(s) de ${res.total} linha(s)${res.falhas?` • <span class="text-amber-700">${res.falhas} falha(s)</span>`:''} ${res.fallback?'<span class="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded-full ml-2">modo fallback</span>':''}</p>
+          </div>
+          <button onclick="cancelarImportacaoEPI()" class="ml-auto border px-4 py-2 rounded-lg text-sm">Fechar</button>
+        </div>
+        ${res.detalhesFalhas && res.detalhesFalhas.length ? `<div class="mt-4 border rounded-lg overflow-hidden"><p class="p-2 bg-amber-50 text-xs font-medium text-amber-900">Falhas (mostrando até 20):</p><table class="w-full text-xs"><tr class="bg-slate-50"><th class="p-2 text-left">Linha</th><th class="p-2 text-left">Erro</th><th class="p-2 text-left">Dados</th></tr>${res.detalhesFalhas.map(f=>`<tr class="border-t"><td class="p-2">${f.linha}</td><td class="p-2 text-red-600">${f.erro}</td><td class="p-2 truncate max-w-[260px]">${JSON.stringify(f.dados).slice(0,120)}</td></tr>`).join('')}</table></div>`:''}
+        <div class="mt-4 flex gap-2">
+          <button onclick="cancelarImportacaoEPI(); loadEpis(); loadDashboard();" class="bg-blue-700 text-white px-5 py-2 rounded-lg text-sm">Atualizar lista</button>
+          <button onclick="downloadModeloEPI()" class="border px-4 py-2 rounded-lg text-sm">Baixar modelo novamente</button>
+        </div>
+      </div>
+    `;
+  };
+  try{
+    let res;
+    try{
+      res = await api('/api/epis/import', {method:'POST', body: { epis: listaParaEnvio }});
+    }catch(errBulk){
+      const isNotFound = /404|NOT_FOUND|não encontrado|The page could not be found|Failed to fetch|Backend não encontrado/i.test(errBulk.message||'');
+      console.warn('[IMPORT] bulk falhou, isNotFound=', isNotFound, errBulk.message);
+      if(isNotFound){
+        // FALLBACK: insere um a um via POST /api/epis (endpoint antigo que existe no Vercel mesmo sem redeploy)
+        toast('Servidor sem rota bulk (404) — usando fallback linha a linha...', true);
+        let sucesso=0; const falhas=[];
+        for(let i=0;i<listaParaEnvio.length;i++){
+          const r = listaParaEnvio[i];
+          const linha=i+2;
+          if(!r.nome || !r.ca){ falhas.push({linha, erro:'Nome e CA são obrigatórios', dados:r}); continue; }
+          const payload = { nome:r.nome, ca:r.ca, validade: r.validade||null, tamanho: r.tamanho||null, quantidade: parseInt(r.quantidade)||0, descricao: r.descricao||null };
+          try{
+            await api('/api/epis', {method:'POST', body: payload});
+            sucesso++;
+          }catch(e2){
+            falhas.push({linha, erro:e2.message, dados:r});
+          }
+        }
+        res = { total: listaParaEnvio.length, sucesso, falhas: falhas.length, detalhesFalhas: falhas.slice(0,20), fallback:true, message: `${sucesso} EPI(s) cadastrado(s) via fallback${falhas.length?` , ${falhas.length} falha(s)`:''}` };
+        if(sucesso===0 && falhas.length>0 && falhas.every(f=>/404|NOT_FOUND/i.test(f.erro))){
+          // Se até POST /api/epis dá 404, é deployment estático sem API - avisa
+          throw new Error('API offline no Vercel (404). O backend não foi deployado. No local use http://localhost:3000 (npm start). No Vercel, é preciso publicar o código do servidor (server/server.js). Detalhe: '+falhas[0].erro);
+        }
+      }else{
+        throw errBulk;
+      }
+    }
+    toast(res.message || `${res.sucesso} EPIs importados!`);
+    renderResultado(res);
+    await loadEpis();
+    await loadDashboard();
+  }catch(e){
+    console.error('[IMPORT] erro final', e);
+    toast('Erro na importação: '+e.message, false);
+    if(btn){ btn.disabled=false; btn.innerHTML=orig; }
+    // Mostra erro detalhado no preview para debug no Vercel
+    const preview = document.getElementById('importPreview');
+    if(preview){
+      preview.innerHTML += `<div class="m-4 p-3 bg-red-50 border border-red-200 rounded-lg text-xs text-red-800"><b>Detalhe erro:</b> ${e.message}<br><span class="text-slate-600">Dica: No Vercel, abra o Console (F12) > Network e veja a resposta de /api/epis/import. Se 404, faça push do server/server.js para o GitHub. Fallback tenta POST /api/epis.</span><br><button onclick="cancelarImportacaoEPI()" class="mt-2 border px-3 py-1 rounded bg-white">Fechar</button></div>`;
+    }
+  }
+};
+
 // Init
 (async()=>{
   await loadFuncionarios();
