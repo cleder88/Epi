@@ -48,12 +48,18 @@ async function api(path, opts={}){
     throw new Error('Servidor offline. Rode "npm start" e acesse http://localhost:3000 (não abra o arquivo direto)');
   }
   const text = await res.text();
-  // Detecta resposta HTML (quando backend não está rodando e cai no fallback)
-  if (text.trim().startsWith('<!DOCTYPE') || text.trim().startsWith('<html')) {
+  // Detecta resposta HTML (quando backend não está rodando e cai no fallback / Live Server)
+  const trimmed = text.trim();
+  if (trimmed.startsWith('<!DOCTYPE') || trimmed.startsWith('<html') || trimmed.toLowerCase().startsWith('<!doctype')) {
     console.error(`API ${path} retornou HTML em vez de JSON. Servidor Node não está atendendo.`);
-    throw new Error('Backend não encontrado (retornou HTML). Verifique se rodou "npm start" e se está acessando http://localhost:3000');
+    throw new Error('Backend não encontrado (retornou HTML). Verifique se rodou "npm start" e se está acessando http://localhost:3000 e NÃO via Live Server/porta 5500 ou file://');
   }
   if(!res.ok){
+    // Caso específico 405 - quase sempre é Live Server / servidor estático sem API
+    if (res.status === 405 || trimmed === 'Method Not Allowed' || trimmed.includes('Method Not Allowed')) {
+      console.error(`API ${path} 405 Method Not Allowed. Você está acessando o frontend no servidor errado.`);
+      throw new Error(`405 Method Not Allowed em ${path}. Você está abrindo o frontend no endereço errado (Live Server em :5500 ou file://). Feche essa aba, rode "npm start" no terminal e acesse http://localhost:3000`);
+    }
     let msg = res.statusText;
     try { const j = JSON.parse(text); msg = j.error||JSON.stringify(j); } catch { msg = text || msg; }
     console.error(`API ${path} ${res.status}:`, msg);
