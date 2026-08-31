@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gestão de EPI - Controle com Reconhecimento Facial</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+  body{font-family:'Inter',sans-serif}
+  .sidebar-active{background:#1e3a8a;color:white}
+  video,canvas{transform:scaleX(-1)}
+  .face-box{position:absolute;border:2px solid #22c55e;box-shadow:0 0 8px #22c55e}
+</style>
+</head>
+<body class="bg-slate-100 min-h-screen">
+<!-- Topbar -->
+<header class="bg-white shadow-sm border-b sticky top-0 z-30">
+  <div class="max-w-[1400px] mx-auto px-4 py-3 flex items-center justify-between">
+    <div class="flex items-center gap-3">
+      <div class="w-9 h-9 bg-blue-800 rounded-lg flex items-center justify-center text-white"><i class="fa-solid fa-helmet-safety"></i></div>
+      <div>
+        <h1 class="font-bold text-slate-800 leading-none">Gestão EPI</h1>
+        <p class="text-xs text-slate-500">Controle com assinatura facial</p>
+      </div>
+    </div>
+    <div class="flex items-center gap-2 text-sm">
+      <span id="faceStatus" class="px-3 py-1 rounded-full bg-amber-100 text-amber-700 text-xs font-medium"><i class="fa-solid fa-circle-notch fa-spin mr-1"></i> Carregando IA facial...</span>
+      <span class="hidden sm:inline text-slate-400">|</span>
+      <span class="text-slate-600 hidden sm:inline"><i class="fa-regular fa-clock mr-1"></i><span id="clock"></span></span>
+    </div>
+  </div>
+</header>
+
+<div class="max-w-[1400px] mx-auto flex flex-col lg:flex-row gap-0 lg:gap-6 p-0 lg:p-6">
+  <!-- Sidebar -->
+  <aside class="bg-white lg:rounded-xl shadow-sm border lg:sticky lg:top-[76px] lg:h-fit lg:w-64 flex lg:flex-col overflow-x-auto lg:overflow-visible">
+    <nav class="flex lg:flex-col w-full p-2 gap-1">
+      <button data-tab="dashboard" class="tab-btn sidebar-active flex items-center gap-3 px-4 py-3 rounded-lg font-medium whitespace-nowrap transition"><i class="fa-solid fa-chart-line w-5"></i> Dashboard</button>
+      <button data-tab="funcionarios" class="tab-btn flex items-center gap-3 px-4 py-3 rounded-lg font-medium whitespace-nowrap text-slate-600 hover:bg-slate-50"><i class="fa-solid fa-users w-5"></i> Funcionários</button>
+      <button data-tab="epis" class="tab-btn flex items-center gap-3 px-4 py-3 rounded-lg font-medium whitespace-nowrap text-slate-600 hover:bg-slate-50"><i class="fa-solid fa-helmet-safety w-5"></i> EPIs</button>
+      <button data-tab="entregas" class="tab-btn flex items-center gap-3 px-4 py-3 rounded-lg font-medium whitespace-nowrap text-slate-600 hover:bg-slate-50"><i class="fa-solid fa-hand-holding-hand w-5"></i> Entregas</button>
+      <button data-tab="relatorios" class="tab-btn flex items-center gap-3 px-4 py-3 rounded-lg font-medium whitespace-nowrap text-slate-600 hover:bg-slate-50"><i class="fa-solid fa-file-lines w-5"></i> Relatórios</button>
+    </nav>
+    <div class="hidden lg:block p-4 mt-2 border-t">
+      <div class="bg-blue-50 rounded-lg p-3 text-xs text-blue-900">
+        <p class="font-semibold"><i class="fa-solid fa-circle-info mr-1"></i> Como funciona?</p>
+        <p class="mt-1 leading-relaxed text-blue-700">Cadastre o rosto do funcionário. Na entrega, o sistema compara ao vivo e só libera com <b>match &lt; 0.6</b> (padrão face-api.js).</p>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Main -->
+  <main class="flex-1 min-w-0 p-4 lg:p-0">
+    <!-- DASHBOARD -->
+    <section id="tab-dashboard" class="tab-panel">
+      <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div class="bg-white rounded-xl p-5 border shadow-sm">
+          <p class="text-sm text-slate-500">Funcionários</p>
+          <p id="statFunc" class="text-3xl font-bold text-slate-800 mt-1">-</p>
+          <p class="text-xs text-slate-400 mt-1"><i class="fa-solid fa-users mr-1"></i>cadastrados</p>
+        </div>
+        <div class="bg-white rounded-xl p-5 border shadow-sm">
+          <p class="text-sm text-slate-500">Tipos de EPI</p>
+          <p id="statEpi" class="text-3xl font-bold text-slate-800 mt-1">-</p>
+          <p class="text-xs text-slate-400 mt-1">em catálogo</p>
+        </div>
+        <div class="bg-white rounded-xl p-5 border shadow-sm">
+          <p class="text-sm text-slate-500">Entregas totais</p>
+          <p id="statEntregas" class="text-3xl font-bold text-blue-700 mt-1">-</p>
+          <p class="text-xs text-slate-400 mt-1">registradas</p>
+        </div>
+        <div class="bg-white rounded-xl p-5 border shadow-sm">
+          <p class="text-sm text-slate-500">Entregas no mês</p>
+          <p id="statMes" class="text-3xl font-bold text-emerald-600 mt-1">-</p>
+          <p id="statBaixo" class="text-xs text-amber-600 mt-1"></p>
+        </div>
+      </div>
+
+      <div class="grid lg:grid-cols-2 gap-4 mt-6">
+        <div class="bg-white rounded-xl border shadow-sm p-5">
+          <h3 class="font-semibold text-slate-800 mb-3"><i class="fa-solid fa-clock-rotate-left mr-2 text-slate-400"></i>Últimas entregas</h3>
+          <div id="dashEntregas" class="space-y-2 text-sm">Carregando...</div>
+        </div>
+        <div class="bg-white rounded-xl border shadow-sm p-5">
+          <h3 class="font-semibold text-slate-800 mb-3"><i class="fa-solid fa-triangle-exclamation mr-2 text-amber-500"></i>EPIs com estoque baixo (&lt;10)</h3>
+          <div id="dashEstoque" class="space-y-2 text-sm">Carregando...</div>
+        </div>
+      </div>
+
+      <div class="bg-gradient-to-r from-blue-800 to-indigo-700 rounded-xl p-6 mt-6 text-white flex flex-col lg:flex-row items-center justify-between gap-4">
+        <div>
+          <h3 class="font-bold text-lg">Entrega com assinatura facial</h3>
+          <p class="text-blue-100 text-sm mt-1">Fluxo: selecione funcionário + EPI → validar rosto ao vivo → registrar entrega com prova.</p>
+        </div>
+        <button onclick="switchTab('entregas')" class="bg-white text-blue-800 px-6 py-3 rounded-lg font-semibold hover:bg-blue-50 transition whitespace-nowrap"><i class="fa-solid fa-camera mr-2"></i>Nova entrega facial</button>
+      </div>
+    </section>
+
+    <!-- FUNCIONARIOS -->
+    <section id="tab-funcionarios" class="tab-panel hidden">
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+        <h2 class="text-xl font-bold text-slate-800">Funcionários</h2>
+        <button onclick="openFuncModal()" class="bg-blue-700 text-white px-5 py-2.5 rounded-lg font-medium hover:bg-blue-800 transition"><i class="fa-solid fa-user-plus mr-2"></i>Novo funcionário</button>
+      </div>
+      <div class="bg-white rounded-xl border shadow-sm overflow-hidden">
+        <div class="p-3 border-b flex gap-2">
+          <div class="relative flex-1">
+            <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm"></i>
+            <input id="searchFunc" placeholder="Buscar por nome, CPF, matrícula ou setor..." class="w-full pl-9 pr-3 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+          </div>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead class="bg-slate-50 text-slate-600">
+              <tr><th class="text-left p-3 font-medium">Funcionário</th><th class="text-left p-3 font-medium">CPF / Matrícula</th><th class="text-left p-3 font-medium">Cargo / Setor</th><th class="text-left p-3 font-medium">Rosto</th><th class="text-right p-3 font-medium">Ações</th></tr>
+            </thead>
+            <tbody id="tbodyFunc" class="divide-y"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- EPIS -->
+    <section id="tab-epis" class="tab-panel hidden">
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+        <h2 class="text-xl font-bold text-slate-800">Equipamentos de Proteção (EPI)</h2>
+        <button onclick="openEpiModal()" class="bg-blue-700 text-white px-5 py-2.5 rounded-lg font-medium hover:bg-blue-800"><i class="fa-solid fa-plus mr-2"></i>Novo EPI</button>
+      </div>
+      <div id="gridEpis" class="grid sm:grid-cols-2 lg:grid-cols-3 gap-4"></div>
+    </section>
+
+    <!-- ENTREGAS -->
+    <section id="tab-entregas" class="tab-panel hidden">
+      <div class="bg-white rounded-xl border shadow-sm p-5 mb-4">
+        <h2 class="text-xl font-bold text-slate-800"><i class="fa-solid fa-hand-holding-hand mr-2 text-blue-700"></i>Registrar entrega com assinatura facial</h2>
+        <p class="text-sm text-slate-500 mt-1">Selecione funcionário e EPI, depois valide o rosto ao vivo. O sistema só registra se o reconhecimento facial aprovar.</p>
+
+        <div class="grid lg:grid-cols-2 gap-6 mt-6">
+          <div class="space-y-4">
+            <div>
+              <label class="text-sm font-medium text-slate-700">Funcionário *</label>
+              <select id="entregaFuncionario" class="w-full mt-1 border rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"></select>
+              <p id="funcFaceInfo" class="text-xs mt-1"></p>
+            </div>
+            <div>
+              <label class="text-sm font-medium text-slate-700">EPI *</label>
+              <select id="entregaEpi" class="w-full mt-1 border rounded-lg px-3 py-2.5 text-sm"></select>
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="text-sm font-medium text-slate-700">Quantidade</label>
+                <input id="entregaQtd" type="number" min="1" value="1" class="w-full mt-1 border rounded-lg px-3 py-2.5 text-sm">
+              </div>
+              <div>
+                <label class="text-sm font-medium text-slate-700">Observação</label>
+                <input id="entregaObs" placeholder="Opcional" class="w-full mt-1 border rounded-lg px-3 py-2.5 text-sm">
+              </div>
+            </div>
+
+            <div id="faceVerifyBox" class="rounded-lg border-2 border-dashed p-4 text-center">
+              <p class="text-sm font-medium text-slate-700"><i class="fa-solid fa-face-smile mr-1"></i> Validação facial</p>
+              <p id="verifyStatus" class="text-xs text-slate-500 mt-1">Selecione um funcionário com rosto cadastrado para habilitar.</p>
+              <div class="flex gap-2 justify-center mt-3">
+                <button id="btnStartVerify" disabled class="bg-slate-200 text-slate-500 px-4 py-2 rounded-lg text-sm font-medium cursor-not-allowed"><i class="fa-solid fa-video mr-1"></i> Abrir câmera</button>
+                <button id="btnDoVerify" disabled class="bg-emerald-600 text-white px-4 py-2 rounded-lg text-sm font-medium disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed"><i class="fa-solid fa-fingerprint mr-1"></i> Verificar e registrar</button>
+              </div>
+              <p id="verifyResult" class="text-sm font-semibold mt-3"></p>
+            </div>
+          </div>
+
+          <div>
+            <div class="relative bg-black rounded-xl overflow-hidden aspect-[4/3] flex items-center justify-center">
+              <video id="videoEntrega" autoplay muted playsinline class="w-full h-full object-cover hidden"></video>
+              <canvas id="canvasEntrega" class="absolute inset-0 w-full h-full hidden"></canvas>
+              <div id="videoPlaceholder" class="text-center text-white/70 p-6">
+                <i class="fa-solid fa-camera text-4xl mb-3 block"></i>
+                <p class="text-sm">Câmera desativada</p>
+                <p class="text-xs text-white/50 mt-1">A pré-visualização aparece aqui durante a verificação</p>
+              </div>
+              <div id="faceOverlay" class="absolute inset-0 pointer-events-none"></div>
+            </div>
+            <div class="flex gap-2 mt-3">
+              <button id="btnStopCamera" class="hidden flex-1 border px-4 py-2 rounded-lg text-sm font-medium"><i class="fa-solid fa-video-slash mr-1"></i> Fechar câmera</button>
+            </div>
+            <p class="text-xs text-slate-500 mt-2"><i class="fa-solid fa-lightbulb mr-1"></i>Dica: boa iluminação frontal e rosto centralizado melhoram o match.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="bg-white rounded-xl border shadow-sm overflow-hidden">
+        <div class="p-4 border-b flex items-center justify-between">
+          <h3 class="font-semibold text-slate-800">Histórico de entregas</h3>
+          <input id="searchEntrega" placeholder="Buscar..." class="border rounded-lg px-3 py-1.5 text-sm w-48">
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead class="bg-slate-50 text-slate-600"><tr><th class="text-left p-3">Data</th><th class="text-left p-3">Funcionário</th><th class="text-left p-3">EPI</th><th class="text-left p-3">Qtd</th><th class="text-left p-3">Assinatura</th><th class="text-right p-3">Ação</th></tr></thead>
+            <tbody id="tbodyEntregas" class="divide-y"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- RELATORIOS -->
+    <section id="tab-relatorios" class="tab-panel hidden">
+      <h2 class="text-xl font-bold text-slate-800 mb-4">Relatórios</h2>
+      <div class="bg-white rounded-xl border shadow-sm p-5">
+        <div class="flex flex-wrap gap-3 mb-4">
+          <button onclick="exportCSV()" class="border px-4 py-2 rounded-lg text-sm font-medium hover:bg-slate-50"><i class="fa-solid fa-file-csv mr-2"></i>Exportar CSV</button>
+          <button onclick="window.print()" class="border px-4 py-2 rounded-lg text-sm font-medium hover:bg-slate-50"><i class="fa-solid fa-print mr-2"></i>Imprimir ficha</button>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead class="bg-slate-50"><tr><th class="text-left p-2">Funcionário</th><th class="text-left p-2">EPI</th><th class="text-left p-2">CA</th><th class="text-left p-2">Data entrega</th><th class="text-left p-2">Score facial</th></tr></thead>
+            <tbody id="tbodyRelatorio" class="divide-y"></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="bg-amber-50 border border-amber-200 rounded-lg p-4 mt-4 text-sm text-amber-900">
+        <p class="font-semibold"><i class="fa-solid fa-scale-balanced mr-1"></i> Validade jurídica</p>
+        <p class="mt-1 text-amber-800">Este sistema registra prova de entrega com <b>biometria facial + timestamp + score</b>. Para conformidade com a NR-6, mantenha também a ficha física assinada quando exigido pela auditoria. O reconhecimento facial aqui substitui a assinatura manuscrita como prova digital interna.</p>
+      </div>
+    </section>
+  </main>
+</div>
+
+<!-- MODAL FUNCIONARIO -->
+<div id="modalFunc" class="fixed inset-0 bg-black/50 hidden items-center justify-center p-4 z-50">
+  <div class="bg-white rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+    <div class="p-5 border-b flex items-center justify-between sticky top-0 bg-white">
+      <h3 id="modalFuncTitle" class="font-bold text-slate-800">Novo funcionário</h3>
+      <button onclick="closeFuncModal()" class="w-8 h-8 rounded-full hover:bg-slate-100"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+    <form id="formFunc" class="p-5 space-y-4">
+      <input type="hidden" id="funcId">
+      <div class="grid sm:grid-cols-2 gap-4">
+        <div class="sm:col-span-2">
+          <label class="text-sm font-medium">Nome completo *</label>
+          <input id="funcNome" required class="w-full mt-1 border rounded-lg px-3 py-2.5 text-sm" placeholder="Ex: João da Silva">
+        </div>
+        <div>
+          <label class="text-sm font-medium">CPF *</label>
+          <input id="funcCpf" required maxlength="14" class="w-full mt-1 border rounded-lg px-3 py-2.5 text-sm" placeholder="000.000.000-00">
+        </div>
+        <div>
+          <label class="text-sm font-medium">Matrícula *</label>
+          <input id="funcMatricula" required class="w-full mt-1 border rounded-lg px-3 py-2.5 text-sm" placeholder="Ex: MAT001">
+        </div>
+        <div>
+          <label class="text-sm font-medium">Cargo *</label>
+          <input id="funcCargo" required class="w-full mt-1 border rounded-lg px-3 py-2.5 text-sm" placeholder="Ex: Operador">
+        </div>
+        <div>
+          <label class="text-sm font-medium">Setor *</label>
+          <input id="funcSetor" required class="w-full mt-1 border rounded-lg px-3 py-2.5 text-sm" placeholder="Ex: Produção">
+        </div>
+      </div>
+
+      <div class="border rounded-xl p-4 bg-slate-50">
+        <p class="text-sm font-semibold text-slate-800"><i class="fa-solid fa-face-viewfinder mr-2 text-blue-700"></i>Biometria facial - assinatura</p>
+        <p class="text-xs text-slate-500 mt-1">Capture o rosto do funcionário. O descriptor será armazenado para validar entregas futuras.</p>
+
+        <div class="relative bg-black rounded-xl overflow-hidden aspect-video mt-3 flex items-center justify-center">
+          <video id="videoFunc" autoplay muted playsinline class="w-full h-full object-cover hidden"></video>
+          <canvas id="canvasFunc" class="absolute inset-0 w-full h-full hidden"></canvas>
+          <div id="videoFuncPlaceholder" class="text-center text-white/70 p-4">
+            <i class="fa-solid fa-user text-3xl mb-2 block"></i>
+            <p class="text-xs">Câmera desligada</p>
+          </div>
+        </div>
+
+        <div class="flex flex-wrap gap-2 mt-3">
+          <button type="button" id="btnFuncCamera" class="bg-white border px-4 py-2 rounded-lg text-sm font-medium"><i class="fa-solid fa-video mr-1"></i> Ligar câmera</button>
+          <button type="button" id="btnFuncCapture" disabled class="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium disabled:bg-slate-200 disabled:text-slate-400"><i class="fa-solid fa-camera mr-1"></i> Capturar rosto</button>
+          <button type="button" id="btnFuncStop" class="hidden border px-4 py-2 rounded-lg text-sm">Desligar</button>
+        </div>
+        <p id="funcFaceStatus" class="text-xs mt-2"></p>
+        <div id="funcPreview" class="hidden mt-3 flex items-center gap-3 p-2 bg-white rounded-lg border">
+          <img id="funcPreviewImg" class="w-12 h-12 rounded-full object-cover border">
+          <div class="text-xs">
+            <p class="font-medium text-emerald-700"><i class="fa-solid fa-check-circle mr-1"></i>Rosto capturado!</p>
+            <p id="funcDescriptorInfo" class="text-slate-500"></p>
+          </div>
+          <button type="button" onclick="clearFaceCapture()" class="ml-auto text-xs text-red-600 hover:underline">Remover</button>
+        </div>
+        <input type="hidden" id="funcDescriptor">
+        <input type="hidden" id="funcFoto">
+      </div>
+
+      <div class="flex gap-3 justify-end pt-2">
+        <button type="button" onclick="closeFuncModal()" class="px-5 py-2.5 border rounded-lg text-sm font-medium">Cancelar</button>
+        <button type="submit" class="bg-blue-700 text-white px-6 py-2.5 rounded-lg text-sm font-medium hover:bg-blue-800">Salvar funcionário</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- MODAL EPI -->
+<div id="modalEpi" class="fixed inset-0 bg-black/50 hidden items-center justify-center p-4 z-50">
+  <div class="bg-white rounded-xl max-w-lg w-full">
+    <div class="p-5 border-b flex items-center justify-between">
+      <h3 class="font-bold">Novo EPI</h3>
+      <button onclick="closeEpiModal()" class="w-8 h-8 rounded-full hover:bg-slate-100"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+    <form id="formEpi" class="p-5 space-y-4">
+      <input type="hidden" id="epiId">
+      <div>
+        <label class="text-sm font-medium">Nome do EPI *</label>
+        <input id="epiNome" required class="w-full mt-1 border rounded-lg px-3 py-2.5 text-sm" placeholder="Ex: Capacete">
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div><label class="text-sm font-medium">CA *</label><input id="epiCa" required class="w-full mt-1 border rounded-lg px-3 py-2.5 text-sm" placeholder="Nº CA"></div>
+        <div><label class="text-sm font-medium">Validade</label><input id="epiValidade" type="date" class="w-full mt-1 border rounded-lg px-3 py-2.5 text-sm"></div>
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div><label class="text-sm font-medium">Tamanho</label><input id="epiTamanho" class="w-full mt-1 border rounded-lg px-3 py-2.5 text-sm" placeholder="M, G, 42..."></div>
+        <div><label class="text-sm font-medium">Quantidade</label><input id="epiQtd" type="number" min="0" value="0" class="w-full mt-1 border rounded-lg px-3 py-2.5 text-sm"></div>
+      </div>
+      <div><label class="text-sm font-medium">Descrição</label><textarea id="epiDesc" rows="2" class="w-full mt-1 border rounded-lg px-3 py-2.5 text-sm"></textarea></div>
+      <div class="flex gap-3 justify-end">
+        <button type="button" onclick="closeEpiModal()" class="px-5 py-2.5 border rounded-lg text-sm">Cancelar</button>
+        <button type="submit" class="bg-blue-700 text-white px-6 py-2.5 rounded-lg text-sm">Salvar</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Toast -->
+<div id="toast" class="fixed bottom-4 left-1/2 -translate-x-1/2 bg-slate-900 text-white px-5 py-3 rounded-full text-sm shadow-lg hidden z-50"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+<script src="js/face.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
